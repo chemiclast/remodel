@@ -1,6 +1,7 @@
 # Remodel Changelog
 
 ## Unreleased Changes
+* **Breaking:** Luau is used instead of Lua 5.3
 
 ## 0.11.0 (2022-09-16)
 * **Breaking:** Reordered parameters of `remodel.writeModelFile` and `remodel.writePlaceFile` to accept path first, then content ([#81]).
