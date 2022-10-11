@@ -25,6 +25,8 @@ use crate::{
     value::{lua_to_rbxvalue, rbxvalue_to_lua, type_from_str},
 };
 
+use super::json;
+
 fn xml_encode_options() -> rbx_xml::EncodeOptions {
     rbx_xml::EncodeOptions::new().property_behavior(rbx_xml::EncodePropertyBehavior::WriteUnknown)
 }
@@ -33,20 +35,44 @@ fn xml_decode_options() -> rbx_xml::DecodeOptions {
     rbx_xml::DecodeOptions::new().property_behavior(rbx_xml::DecodePropertyBehavior::ReadUnknown)
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioPermissionsRequest {
+    requests: Vec<AudioPermissionsRequestEntry>,
+}
+
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioPermissionsRequestEntry {
+    subject: AudioPermissionsRequestSubject,
+    action: String,
+    asset_id: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioPermissionsRequestSubject {
+    subject_type: String,
+    subject_id: String,
+}
+
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AudioPermissionsResponse {
     results: Vec<AudioPermissionsResponseEntry>,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AudioPermissionsResponseEntry {
-    action: String,
-    subject_id: String,
-    subject_type: String,
-    // Unused (for now?)
-    // permission_level: String,
-    // permission_source: String,
+enum AudioPermissionsResponseEntry {
+    Error {
+        code: String,
+        message: String,
+    },
+    Value {
+        status: String,
+    }
 }
 
 pub enum UploadPlaceAsset {
@@ -484,45 +510,79 @@ impl Remodel {
             )
         })?;
 
-        let mut request_futures: Vec<BoxFuture<'_, Result<bool, mlua::Error>>> = Vec::new();
+        let mut request_futures: Vec<BoxFuture<'_, Result<_, mlua::Error>>> = Vec::new();
 
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60 * 3))
-            .build()
-            .map_err(mlua::Error::external)?;
+        let mut request_asset_ids = |asset_ids: Vec<u64>| {
+            let url = "https://apis.roblox.com/asset-permissions-api/v1/assets/check-permissions";
 
-        for asset_id in asset_ids.iter() {
-            let url = format!(
-                "https://apis.roblox.com/asset-permissions-api/v1/assets/{}/permissions",
-                asset_id
-            );
-
-            let request = client
-                .get(&url)
-                .header(COOKIE, format!(".ROBLOSECURITY={}", auth_cookie));
+            let request_data: String = serde_json::to_string(&asset_ids.iter().fold(AudioPermissionsRequest { requests: Vec::new() }, |mut base: AudioPermissionsRequest, asset_id| {
+                base.requests.push(AudioPermissionsRequestEntry {
+                    subject: AudioPermissionsRequestSubject {
+                        subject_type: "Universe".into(),
+                        subject_id: format!("{}", universe_id),
+                    },
+                    action: "Use".into(),
+                    asset_id: format!("{}", asset_id),
+                });
+                base
+            })).map_err(mlua::Error::external).unwrap();
 
             request_futures.push(Box::pin(async move {
-                let response = request.send().await.map_err(mlua::Error::external)?;
-
-                if response.status().is_success() {
-                    let response: AudioPermissionsResponse =
-                        response.json().await.map_err(mlua::Error::external)?;
-                    Ok(response
-                        .results
-                        .iter()
-                        .find(|entry| {
-                            entry.subject_type == "Universe"
-                                && entry.subject_id == format!("{}", universe_id)
-                                && entry.action == "Use"
-                        })
-                        .is_some())
-                } else {
-                    Err(mlua::Error::external(format!(
-                        "Roblox API returned an error, status {}.",
-                        response.status()
-                    )))
+                let client = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(60 * 3))
+                    .build()
+                    .map_err(mlua::Error::external)?;
+                
+                let build_request = || {
+                    client
+                        .post(url)
+                        .header(COOKIE, format!(".ROBLOSECURITY={}", auth_cookie))
+                        .header("Content-Type", "application/json")
+                        .body(request_data.clone())
+                };
+                
+                let mut response = build_request()
+                    .send()
+                    .await
+                    .map_err(mlua::Error::external)?;
+    
+                if response.status() == StatusCode::FORBIDDEN {
+                    if let Some(csrf_token) = response.headers().get("X-CSRF-Token") {
+                        log::debug!("Received CSRF challenge, retrying with token...");
+                        response = build_request()
+                            .header("X-CSRF-Token", csrf_token)
+                            .send()
+                            .await
+                            .map_err(mlua::Error::external)?;
+                    }
                 }
+
+                let response = response.error_for_status().map_err(mlua::Error::external)?;
+
+                let response_data: AudioPermissionsResponse = response.json().await.map_err(mlua::Error::external)?;
+
+                Ok(response_data.results.into_iter().enumerate().map(|(index, result)| {
+                    let asset_id = format!("{}", asset_ids[index]);
+                    match result {
+                        AudioPermissionsResponseEntry::Value { status } => (asset_id, Ok(status == "HasPermission")),
+                        AudioPermissionsResponseEntry::Error { code, message } => (asset_id, Err(format!("{} {}", code, message))),
+                    }
+                }).collect::<HashMap<String, Result<bool, String>>>())
             }));
+        };
+
+        let mut asset_ids_to_request = Vec::new();
+        for asset_id in asset_ids.iter() {
+            asset_ids_to_request.push(*asset_id);
+
+            if asset_ids_to_request.len() == 50 {
+                request_asset_ids(asset_ids_to_request.clone());
+                asset_ids_to_request.clear();
+            }
+        }
+        
+        if asset_ids_to_request.len() != 0 {
+            request_asset_ids(asset_ids_to_request);
         }
 
         let results = futures::future::join_all(request_futures).await;
@@ -530,16 +590,30 @@ impl Remodel {
         let mut lua_results = HashMap::new();
         let mut lua_errors = HashMap::new();
 
-        for (index, result) in results.iter().enumerate() {
-            let asset_id = asset_ids[index];
+        for (future_index, result) in results.into_iter().enumerate() {
             match result {
-                Ok(result) => {
-                    lua_results.insert(format!("{}", asset_id), *result);
-                }
+                Ok(results) => {
+                    for (asset_id, result) in results {
+                        match result {
+                            Ok(has_permission) => {
+                                lua_results.insert(asset_id, has_permission);
+                            },
+                            Err(error) => {
+                                lua_errors.insert(asset_id, error);
+                            },
+                        }
+                    }
+                },
                 Err(error) => {
-                    lua_errors.insert(format!("{}", asset_id), error.to_string());
+                    for index in (future_index * 50)..((future_index + 1) * 50) {
+                        if index >= asset_ids.len() {
+                            break;
+                        }
+                        let asset_id = asset_ids[index];
+                        lua_errors.insert(format!("{}", asset_id), error.to_string());
+                    };
                 }
-            }
+            };
         }
 
         let mut results_table = HashMap::new();
