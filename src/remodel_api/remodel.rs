@@ -1,11 +1,13 @@
 use std::{
     ffi::OsStr,
     fs::{self, File},
-    io::{BufReader, BufWriter, Read},
+    io::{BufReader, BufWriter},
     path::Path,
     sync::Arc,
     time::Duration,
 };
+
+use tokio;
 
 use mlua::{Lua, UserData, UserDataMethods};
 use rbx_dom_weak::{types::VariantType, InstanceBuilder, WeakDom};
@@ -191,7 +193,8 @@ impl Remodel {
             .map_err(|err| mlua::Error::external(format!("{:?}", err)))
     }
 
-    fn read_model_asset(context: &Lua, asset_id: u64) -> mlua::Result<Vec<LuaInstance>> {
+    #[tokio::main(flavor = "current_thread")]
+    async fn read_model_asset(context: &Lua, asset_id: u64) -> mlua::Result<Vec<LuaInstance>> {
         let re_context = RemodelContext::get(context)?;
         let auth_cookie = re_context.auth_cookie();
         let url = format!("https://assetdelivery.roblox.com/v1/asset/?id={}", asset_id);
@@ -209,12 +212,13 @@ impl Remodel {
             log::warn!("No auth cookie detected, Remodel may be unable to download this asset.");
         }
 
-        let mut response = request.send().map_err(mlua::Error::external)?;
+        let response = request.send().await.map_err(mlua::Error::external)?;
 
-        let mut body = Vec::new();
-        response
-            .read_to_end(&mut body)
-            .map_err(mlua::Error::external)?;
+        let body: Vec<u8> = response
+            .bytes()
+            .await
+            .map_err(mlua::Error::external)?
+            .into();
 
         let source_tree = match sniff_type(&body) {
             Some(DocumentType::Binary) => {
@@ -240,7 +244,8 @@ impl Remodel {
         Remodel::import_tree_children(context, source_tree)
     }
 
-    fn read_place_asset(context: &Lua, asset_id: u64) -> mlua::Result<LuaInstance> {
+    #[tokio::main(flavor = "current_thread")]
+    async fn read_place_asset(context: &Lua, asset_id: u64) -> mlua::Result<LuaInstance> {
         let re_context = RemodelContext::get(context)?;
         let auth_cookie = re_context.auth_cookie();
         let url = format!("https://assetdelivery.roblox.com/v1/asset/?id={}", asset_id);
@@ -257,12 +262,13 @@ impl Remodel {
             log::warn!("No auth cookie detected, Remodel may be unable to download this asset.");
         }
 
-        let mut response = request.send().map_err(mlua::Error::external)?;
+        let response = request.send().await.map_err(mlua::Error::external)?;
 
-        let mut body = Vec::new();
-        response
-            .read_to_end(&mut body)
-            .map_err(mlua::Error::external)?;
+        let body: Vec<u8> = response
+            .bytes()
+            .await
+            .map_err(mlua::Error::external)?
+            .into();
 
         let source_tree = match sniff_type(&body) {
             Some(DocumentType::Binary) => {
@@ -339,7 +345,8 @@ impl Remodel {
         }
     }
 
-    fn cloud_upload_place_asset(
+    #[tokio::main(flavor = "current_thread")]
+    async fn cloud_upload_place_asset(
         context: &Lua,
         buffer: Vec<u8>,
         universe_id: u64,
@@ -372,7 +379,10 @@ impl Remodel {
         };
 
         log::debug!("Uploading to Roblox Cloud...");
-        let response = build_request().send().map_err(mlua::Error::external)?;
+        let response = build_request()
+            .send()
+            .await
+            .map_err(mlua::Error::external)?;
 
         if response.status().is_success() {
             Ok(())
@@ -384,7 +394,8 @@ impl Remodel {
         }
     }
 
-    fn upload_asset(context: &Lua, buffer: Vec<u8>, asset_id: u64) -> mlua::Result<()> {
+    #[tokio::main(flavor = "current_thread")]
+    async fn upload_asset(context: &Lua, buffer: Vec<u8>, asset_id: u64) -> mlua::Result<()> {
         let re_context = RemodelContext::get(context)?;
         let auth_cookie = re_context.auth_cookie().ok_or_else(|| {
             mlua::Error::external(
@@ -413,7 +424,10 @@ impl Remodel {
         };
 
         log::debug!("Uploading to Roblox...");
-        let mut response = build_request().send().map_err(mlua::Error::external)?;
+        let mut response = build_request()
+            .send()
+            .await
+            .map_err(mlua::Error::external)?;
 
         // Starting in Feburary, 2021, the upload endpoint performs CSRF challenges.
         // If we receive an HTTP 403 with a X-CSRF-Token reply, we should retry the
@@ -424,6 +438,7 @@ impl Remodel {
                 response = build_request()
                     .header("X-CSRF-Token", csrf_token)
                     .send()
+                    .await
                     .map_err(mlua::Error::external)?;
             }
         }
