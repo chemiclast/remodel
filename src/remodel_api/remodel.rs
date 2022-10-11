@@ -711,6 +711,105 @@ impl Remodel {
 
         Ok(results_table.to_lua(context)?)
     }
+    
+    #[tokio::main(flavor = "current_thread")]
+    async fn get_asset_infos(context: &Lua, asset_ids: Vec<u64>) -> mlua::Result<mlua::Value> {
+        let re_context = RemodelContext::get(context)?;
+        let auth_cookie = re_context.auth_cookie().ok_or_else(|| {
+            mlua::Error::external(
+                "Checking asset info requires an auth cookie, please log into Roblox Studio.",
+            )
+        })?;
+
+        let mut request_futures: Vec<BoxFuture<'_, Result<_, mlua::Error>>> = Vec::new();
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60 * 3))
+            .build()
+            .map_err(mlua::Error::external)?;
+
+        let mut request_asset_ids = |asset_ids_list: Vec<u64>| {
+            let asset_ids_str = asset_ids_list.iter().map(|v| format!("{}", v)).collect::<Vec<String>>().join(",");
+            let url = format!("https://apis.roblox.com/toolbox-service/v1/items/details?assetIds={}", asset_ids_str);
+
+            let request = client
+                .get(&url)
+                .header(COOKIE, format!(".ROBLOSECURITY={}", auth_cookie));
+
+            request_futures.push(Box::pin(async move {
+                let response = request.send().await.map_err(mlua::Error::external)?;
+
+                if response.status().is_success() {
+                    let response_json: serde_json::Value = response.json().await.map_err(mlua::Error::external)?;
+                    if let Some(data) = response_json.get("data") {
+                        if let Some(data) = data.as_array() {
+                            let mut results = HashMap::new();
+                            for item in data.iter() {
+                                if let Some(asset_info) = item.get("asset") {
+                                    if let Some(id) = asset_info.get("id") {
+                                        if let Some(id) = id.as_u64() {
+                                            results.insert(id, item.clone());
+                                        }
+                                    }
+                                }
+                            }
+                            return Ok(results)
+                        }
+                    }
+                    
+                    Err(mlua::Error::external("Invalid response from Roblox API."))
+                } else {
+                    Err(mlua::Error::external(format!(
+                        "Roblox API returned an error, status {}.",
+                        response.status()
+                    )))
+                }
+            }));
+        };
+
+        let mut asset_ids_to_request = Vec::new();
+        for asset_id in asset_ids.iter() {
+            asset_ids_to_request.push(*asset_id);
+
+            if asset_ids_to_request.len() == 20 {
+                request_asset_ids(asset_ids_to_request.clone());
+                
+                asset_ids_to_request.clear();
+            }
+        }
+        
+        if asset_ids_to_request.len() != 0 {
+            request_asset_ids(asset_ids_to_request);
+        }
+
+        let results = futures::future::join_all(request_futures).await;
+
+        let mut lua_results = HashMap::new();
+        let mut lua_errors = HashMap::new();
+
+        for (future_index, result) in results.into_iter().enumerate() {
+            match result {
+                Ok(results) => {
+                    lua_results.extend(results.into_iter().map(|(k, v)| (format!("{}", k), json::Value(v))));
+                },
+                Err(error) => {
+                    for index in (future_index * 50)..((future_index + 1) * 50) {
+                        if index >= asset_ids.len() {
+                            break;
+                        }
+                        let asset_id = asset_ids[index];
+                        lua_errors.insert(format!("{}", asset_id), error.to_string());
+                    };
+                }
+            };
+        }
+
+        let mut results_table = HashMap::new();
+        results_table.insert("results", lua_results.to_lua(context)?);
+        results_table.insert("errors", lua_errors.to_lua(context)?);
+
+        Ok(results_table.to_lua(context)?)
+    }
 
     fn get_raw_property<'a>(
         context: &'a Lua,
@@ -764,6 +863,18 @@ impl UserData for Remodel {
                     .ok_or_else(|| mlua::Error::external(format!("{} is not a valid Roblox type.", lua_ty)))?;
 
                 Self::set_raw_property(instance, name, ty, value)
+            },
+        );
+        
+        methods.add_function(
+            "getAssetInfos",
+            |context, asset_ids: Vec<String>| {
+                let asset_ids = asset_ids
+                    .iter()
+                    .map(|id| id.parse().map_err(mlua::Error::external))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                Remodel::get_asset_infos(context, asset_ids)
             },
         );
 

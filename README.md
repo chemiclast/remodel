@@ -329,6 +329,17 @@ Grants `universeId` permission to use the audio assets in `assetIds`.
 `results` contains true for each successful asset id. For any asset that
 granting permissions errored for, `errors` will contain the error message.
 
+### `remodel.getAssetInfos` (0.12.0+)
+```
+remodel.getAssetInfos(assetIds: { string }): { results: { [string]: { asset: { ... }, creator: { ... }, voting: { ... } } }, errors: { [string]: string } }
+```
+
+Gets information about the given asset ids.
+
+Returns the result of `https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=...`
+
+Ids that are not valid asset ids will be missing from both the `results` map and `errors` map.
+
 ## JSON API
 
 ### `json.fromString` (0.7.0+)
