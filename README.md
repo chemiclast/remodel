@@ -99,6 +99,26 @@ Note that this function returns a **list of instances** instead of a single inst
 
 Throws on error.
 
+### `remodel.checkAudioPermissions` (0.12.0+)
+```
+remodel.checkAudioPermissions(universeId: string, assetIds: { string }): { results: { [string]: boolean }, errors: { [string]: string } }
+```
+
+Checks if `universeId` has permission to use the audio assets in `assetIds`.
+
+`results` contains true/false results for each asset id. For any asset that
+checking permissions errored for, `errors` will contain the error message.
+
+### `remodel.grantAudioPermissions` (0.12.0+)
+```
+remodel.grantAudioPermissions(universeId: string, assetIds: { string }): { results: { [string]: boolean }, errors: { [string]: string } }
+```
+
+Grants `universeId` permission to use the audio assets in `assetIds`.
+
+`results` contains true for each successful asset id. For any asset that
+granting permissions errored for, `errors` will contain the error message.
+
 ### `remodel.readPlaceAsset` (0.5.0+)
 ```
 remodel.readPlaceAsset(assetId: string): Instance

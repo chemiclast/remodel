@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     ffi::OsStr,
     fs::{self, File},
     io::{BufReader, BufWriter},
@@ -9,7 +10,8 @@ use std::{
 
 use tokio;
 
-use mlua::{Lua, UserData, UserDataMethods};
+use futures::future::BoxFuture;
+use mlua::{Lua, ToLua, UserData, UserDataMethods};
 use rbx_dom_weak::{types::VariantType, InstanceBuilder, WeakDom};
 use reqwest::{
     header::{ACCEPT, CONTENT_TYPE, COOKIE, USER_AGENT},
@@ -29,6 +31,22 @@ fn xml_encode_options() -> rbx_xml::EncodeOptions {
 
 fn xml_decode_options() -> rbx_xml::DecodeOptions {
     rbx_xml::DecodeOptions::new().property_behavior(rbx_xml::DecodePropertyBehavior::ReadUnknown)
+}
+
+#[derive(serde::Deserialize)]
+struct AudioPermissionsResponse {
+    results: Vec<AudioPermissionsResponseEntry>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioPermissionsResponseEntry {
+    action: String,
+    subject_id: String,
+    subject_type: String,
+    // Unused (for now?)
+    // permission_level: String,
+    // permission_source: String,
 }
 
 pub enum UploadPlaceAsset {
@@ -453,6 +471,173 @@ impl Remodel {
         }
     }
 
+    #[tokio::main(flavor = "current_thread")]
+    async fn check_audio_permissions(
+        context: &Lua,
+        universe_id: u64,
+        asset_ids: Vec<u64>,
+    ) -> mlua::Result<mlua::Value> {
+        let re_context = RemodelContext::get(context)?;
+        let auth_cookie = re_context.auth_cookie().ok_or_else(|| {
+            mlua::Error::external(
+                "Checking audio permissions requires an auth cookie, please log into Roblox Studio.",
+            )
+        })?;
+
+        let mut request_futures: Vec<BoxFuture<'_, Result<bool, mlua::Error>>> = Vec::new();
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60 * 3))
+            .build()
+            .map_err(mlua::Error::external)?;
+
+        for asset_id in asset_ids.iter() {
+            let url = format!(
+                "https://apis.roblox.com/asset-permissions-api/v1/assets/{}/permissions",
+                asset_id
+            );
+
+            let request = client
+                .get(&url)
+                .header(COOKIE, format!(".ROBLOSECURITY={}", auth_cookie));
+
+            request_futures.push(Box::pin(async move {
+                let response = request.send().await.map_err(mlua::Error::external)?;
+
+                if response.status().is_success() {
+                    let response: AudioPermissionsResponse =
+                        response.json().await.map_err(mlua::Error::external)?;
+                    Ok(response
+                        .results
+                        .iter()
+                        .find(|entry| {
+                            entry.subject_type == "Universe"
+                                && entry.subject_id == format!("{}", universe_id)
+                                && entry.action == "Use"
+                        })
+                        .is_some())
+                } else {
+                    Err(mlua::Error::external(format!(
+                        "Roblox API returned an error, status {}.",
+                        response.status()
+                    )))
+                }
+            }));
+        }
+
+        let results = futures::future::join_all(request_futures).await;
+
+        let mut lua_results = HashMap::new();
+        let mut lua_errors = HashMap::new();
+
+        for (index, result) in results.iter().enumerate() {
+            let asset_id = asset_ids[index];
+            match result {
+                Ok(result) => {
+                    lua_results.insert(format!("{}", asset_id), *result);
+                }
+                Err(error) => {
+                    lua_errors.insert(format!("{}", asset_id), error.to_string());
+                }
+            }
+        }
+
+        let mut results_table = HashMap::new();
+        results_table.insert("results", lua_results.to_lua(context)?);
+        results_table.insert("errors", lua_errors.to_lua(context)?);
+
+        Ok(results_table.to_lua(context)?)
+    }
+
+    #[tokio::main(flavor = "current_thread")]
+    async fn grant_audio_permissions(
+        context: &Lua,
+        universe_id: u64,
+        asset_ids: Vec<u64>,
+    ) -> mlua::Result<mlua::Value> {
+        let re_context = RemodelContext::get(context)?;
+        let auth_cookie = re_context.auth_cookie().ok_or_else(|| {
+            mlua::Error::external(
+                "Granting audio permissions requires an auth cookie, please log into Roblox Studio.",
+            )
+        })?;
+
+        let mut request_futures: Vec<BoxFuture<'_, Result<(), mlua::Error>>> = Vec::new();
+
+        for asset_id in asset_ids.iter() {
+            let url = format!(
+                "https://apis.roblox.com/asset-permissions-api/v1/assets/{}/permissions",
+                asset_id
+            );
+
+            request_futures.push(Box::pin(async move {
+                let client = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(60 * 3))
+                    .build()
+                    .map_err(mlua::Error::external)?;
+                
+                let build_request = move || {
+                    client
+                        .patch(&url)
+                        .header(COOKIE, format!(".ROBLOSECURITY={}", auth_cookie))
+                        .header("Content-Type", "application/json")
+                        .body(format!(
+                            r#"{{"requests":[{{"subjectType":"Universe","subjectId":"{}","action":"Use"}}]}}"#,
+                            universe_id
+                        ))
+                };
+                
+                let mut response = build_request()
+                    .send()
+                    .await
+                    .map_err(mlua::Error::external)?;
+
+                if response.status() == StatusCode::FORBIDDEN {
+                    if let Some(csrf_token) = response.headers().get("X-CSRF-Token") {
+                        log::debug!("Received CSRF challenge, retrying with token...");
+                        response = build_request()
+                            .header("X-CSRF-Token", csrf_token)
+                            .send()
+                            .await
+                            .map_err(mlua::Error::external)?;
+                    }
+                }
+
+                if response.status().is_success() {
+                    Ok(())
+                } else {
+                    Err(mlua::Error::external(format!(
+                        "Roblox API returned an error, status {}.",
+                        response.status()
+                    )))
+                }
+            }));
+        }
+
+        let results = futures::future::join_all(request_futures).await;
+
+        let mut lua_results = HashMap::new();
+        let mut lua_errors = HashMap::new();
+
+        for (index, result) in results.iter().enumerate() {
+            let asset_id = asset_ids[index];
+            match result {
+                Ok(_) => {
+                    lua_results.insert(format!("{}", asset_id), true);
+                }
+                Err(error) => {
+                    lua_errors.insert(format!("{}", asset_id), error.to_string());
+                }
+            }
+        }
+
+        let mut results_table = HashMap::new();
+        results_table.insert("results", lua_results.to_lua(context)?);
+        results_table.insert("errors", lua_errors.to_lua(context)?);
+
+        Ok(results_table.to_lua(context)?)
+    }
+
     fn get_raw_property<'a>(
         context: &'a Lua,
         lua_instance: LuaInstance,
@@ -505,6 +690,32 @@ impl UserData for Remodel {
                     .ok_or_else(|| mlua::Error::external(format!("{} is not a valid Roblox type.", lua_ty)))?;
 
                 Self::set_raw_property(instance, name, ty, value)
+            },
+        );
+
+        methods.add_function(
+            "checkAudioPermissions",
+            |context, (universe_id, asset_ids): (String, Vec<String>)| {
+                let universe_id = universe_id.parse().map_err(mlua::Error::external)?;
+                let asset_ids = asset_ids
+                    .iter()
+                    .map(|id| id.parse().map_err(mlua::Error::external))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                Remodel::check_audio_permissions(context, universe_id, asset_ids)
+            },
+        );
+
+        methods.add_function(
+            "grantAudioPermissions",
+            |context, (universe_id, asset_ids): (String, Vec<String>)| {
+                let universe_id = universe_id.parse().map_err(mlua::Error::external)?;
+                let asset_ids = asset_ids
+                    .iter()
+                    .map(|id| id.parse().map_err(mlua::Error::external))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                Remodel::grant_audio_permissions(context, universe_id, asset_ids)
             },
         );
 

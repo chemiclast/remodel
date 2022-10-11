@@ -3,7 +3,7 @@ name = "remodel"
 version = "0.11.0"
 description = "A tool to read, modify, and write Roblox objects."
 authors = ["Lucien Greathouse <me@lpghatguy.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 homepage = "https://github.com/rojo-rbx/remodel"
 documentation = "https://github.com/rojo-rbx/remodel"
@@ -31,14 +31,19 @@ backtrace = "0.3.61"
 base64 = "0.13.0"
 log = "0.4.14"
 rbx_cookie = "0.1.2"
-reqwest = "0.11.12"
 serde = "1.0.130"
 serde_json = "1.0.68"
 structopt = "0.3.23"
 
+futures = "0.3.24"
+
 [dependencies.tokio]
 version = "1.21.2"
 features = ["macros"]
+
+[dependencies.reqwest]
+version = "0.11.12"
+features = ["json"]
 
 [dependencies.mlua]
 version = "0.8.4"
