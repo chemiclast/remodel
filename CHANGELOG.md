@@ -2,7 +2,7 @@
 
 ## Unreleased Changes
 
-## 0.12.0-uplift.release.1 (2022-10-11) (prerelease)
+## 0.12.0-uplift.release.2 (2022-10-11) (prerelease)
 * **Breaking:** Luau is used instead of Lua 5.3
 * Added `remodel.checkAudioPermissions(universeId, assetIds)` and `remodel.grantAudioPermissions(universeId, assetIds)`
 * Upgraded dependencies
