@@ -42,7 +42,7 @@ features = ["macros"]
 
 [dependencies.mlua]
 version = "0.8.4"
-features = ["lua53", "vendored"]
+features = ["luau", "vendored"]
 
 [dependencies.env_logger]
 version = "0.9.1"

@@ -645,6 +645,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "luau0-src"
+version = "0.4.0+luau548"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea5996be45423bfe6cba6c13ce9973edad0a2b81c7aa21b32dc1fb4e3b99be9f"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "lz4"
 version = "1.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -707,6 +716,7 @@ dependencies = [
  "cc",
  "lua-src",
  "luajit-src",
+ "luau0-src",
  "num-traits",
  "once_cell",
  "pkg-config",

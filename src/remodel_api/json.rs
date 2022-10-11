@@ -1,3 +1,5 @@
+use std::{convert::TryFrom, i32};
+
 use mlua::{FromLua, Lua, Table, ToLua, UserData, UserDataMethods, Value as LuaValue};
 use serde::Serialize;
 use serde_json::{
@@ -50,7 +52,13 @@ impl<'lua> ToLua<'lua> for Value {
             JsonValue::Bool(value) => Ok(LuaValue::Boolean(value)),
             JsonValue::Number(num) => {
                 if let Some(value) = num.as_i64() {
-                    Ok(LuaValue::Integer(value))
+                    // If our value fits in an Lua integer, make it an integer,
+                    // otherwise make it the closest float.
+                    if let Ok(value) = i32::try_from(value) {
+                        Ok(LuaValue::Integer(value))
+                    } else {
+                        Ok(LuaValue::Number(value as f64))
+                    }
                 } else if let Some(value) = num.as_f64() {
                     Ok(LuaValue::Number(value))
                 } else {
