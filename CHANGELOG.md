@@ -1,8 +1,12 @@
 # Remodel Changelog
 
 ## Unreleased Changes
+
+## 0.12.0-uplift.release.1 (2022-10-11) (prerelease)
 * **Breaking:** Luau is used instead of Lua 5.3
 * Added `remodel.checkAudioPermissions(universeId, assetIds)` and `remodel.grantAudioPermissions(universeId, assetIds)`
+* Upgraded dependencies
+* Upgraded Rust edition to 2021
 
 ## 0.11.0 (2022-09-16)
 * **Breaking:** Reordered parameters of `remodel.writeModelFile` and `remodel.writePlaceFile` to accept path first, then content ([#81]).
