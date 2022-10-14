@@ -2,6 +2,10 @@
 
 ## Unreleased Changes
 
+## 0.12.0-uplift.release.5 (2022-10-14) (prerelease)
+* Added `remodel.runCommand` since Luau does not have access to the `os` or `io`
+  libraries need to run commands.
+
 ## 0.12.0-uplift.release.4 (2022-10-11) (prerelease)
 * **Breaking:** Luau is used instead of Lua 5.3
 * Added `remodel.checkAudioPermissions(universeId, assetIds)` and `remodel.grantAudioPermissions(universeId, assetIds)`

@@ -309,6 +309,13 @@ This is a thin wrapper around Rust's [`fs::metadata`](https://doc.rust-lang.org/
 
 Throws on error, like if the path does not exist.
 
+### `remodel.runCommand` (0.12.0+)
+```
+remodel.runCommand(command: string, args: { string }?): { stdout: string, stderr: string, status: boolean, code: number }
+```
+
+Runs a command and returns the result.
+
 ### `remodel.checkAudioPermissions` (0.12.0+)
 ```
 remodel.checkAudioPermissions(universeId: string, assetIds: { string }): { results: { [string]: boolean }, errors: { [string]: string } }

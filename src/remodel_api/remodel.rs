@@ -845,6 +845,23 @@ impl Remodel {
 
         Ok(())
     }
+
+    fn run_command<'a>(context: &'a Lua, command: &str, args: Vec<&str>) -> mlua::Result<mlua::Value<'a>> {
+        let result = std::process::Command::new(command).args(args).output().map_err(|err| {
+            mlua::Error::external(format!(
+                "Failed to run command: {}",
+                err.to_string()
+            ))
+        })?;
+
+        let mut results_table = HashMap::new();
+        results_table.insert("stdout", mlua::Value::String(context.create_string(&result.stdout)?));
+        results_table.insert("stderr", mlua::Value::String(context.create_string(&result.stderr)?));
+        results_table.insert("code", result.status.code().to_lua(context)?);
+        results_table.insert("success", result.status.success().to_lua(context)?);
+
+        Ok(results_table.to_lua(context)?)
+    }
 }
 
 impl UserData for Remodel {
@@ -901,6 +918,13 @@ impl UserData for Remodel {
                     .collect::<Result<Vec<_>, _>>()?;
 
                 Remodel::grant_audio_permissions(context, universe_id, asset_ids)
+            },
+        );
+
+        methods.add_function(
+            "runCommand",
+            |context, (command, args): (String, Option<Vec<String>>)| {
+                Remodel::run_command(context, &command, args.unwrap_or_else(|| Vec::new()).iter().map(|s| s.as_str()).collect())
             },
         );
 
