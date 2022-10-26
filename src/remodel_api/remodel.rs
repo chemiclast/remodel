@@ -8,21 +8,22 @@ use std::{
     time::Duration,
 };
 
+use serde_with::{serde_as, Bytes};
 use tokio;
 
 use futures::future::BoxFuture;
-use mlua::{Lua, ToLua, UserData, UserDataMethods};
+use mlua::{Lua, ToLua, UserData, UserDataMethods, LuaSerdeExt};
 use rbx_dom_weak::{types::VariantType, InstanceBuilder, WeakDom};
 use reqwest::{
     header::{ACCEPT, CONTENT_TYPE, COOKIE, USER_AGENT},
-    StatusCode,
+    StatusCode, Method,
 };
 
 use crate::{
     remodel_context::RemodelContext,
     roblox_api::LuaInstance,
     sniff_type::{sniff_type, DocumentType},
-    value::{lua_to_rbxvalue, rbxvalue_to_lua, type_from_str},
+    value::{lua_to_rbxvalue, rbxvalue_to_lua, type_from_str}, lua_runtime::Runtime,
 };
 
 use super::json;
@@ -40,7 +41,6 @@ fn xml_decode_options() -> rbx_xml::DecodeOptions {
 struct AudioPermissionsRequest {
     requests: Vec<AudioPermissionsRequestEntry>,
 }
-
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,6 +61,37 @@ struct AudioPermissionsRequestSubject {
 #[serde(rename_all = "camelCase")]
 struct AudioPermissionsResponse {
     results: Vec<AudioPermissionsResponseEntry>,
+}
+
+#[serde_as]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "PascalCase")]
+pub struct LuaHttpRequest {
+    url: String,
+    method: Option<String>,
+
+    #[serde_as(as = "Option<HashMap<Bytes, Bytes>>")]
+    headers: Option<HashMap<Vec<u8>, Vec<u8>>>,
+    
+    #[serde_as(as = "Option<Bytes>")]
+    body: Option<Vec<u8>>,
+
+    roblox_auth: Option<bool>,
+    roblox_api_key: Option<bool>,
+    roblox_csrf: Option<bool>,
+}
+
+#[serde_as]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct LuaHttpResponse {
+    success: bool,
+    status_code: u16,
+    status_message: String,
+    #[serde_as(as = "HashMap<Bytes, Bytes>")]
+    headers: HashMap<Vec<u8>, Vec<u8>>,
+    #[serde_as(as = "Option<Bytes>")]
+    body: Option<Vec<u8>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -237,7 +268,6 @@ impl Remodel {
             .map_err(|err| mlua::Error::external(format!("{:?}", err)))
     }
 
-    #[tokio::main(flavor = "current_thread")]
     async fn read_model_asset(context: &Lua, asset_id: u64) -> mlua::Result<Vec<LuaInstance>> {
         let re_context = RemodelContext::get(context)?;
         let auth_cookie = re_context.auth_cookie();
@@ -288,7 +318,6 @@ impl Remodel {
         Remodel::import_tree_children(context, source_tree)
     }
 
-    #[tokio::main(flavor = "current_thread")]
     async fn read_place_asset(context: &Lua, asset_id: u64) -> mlua::Result<LuaInstance> {
         let re_context = RemodelContext::get(context)?;
         let auth_cookie = re_context.auth_cookie();
@@ -337,7 +366,7 @@ impl Remodel {
         Remodel::import_tree_root(context, source_tree)
     }
 
-    fn write_existing_model_asset(
+    async fn write_existing_model_asset(
         context: &Lua,
         lua_instance: LuaInstance,
         asset_id: u64,
@@ -357,10 +386,10 @@ impl Remodel {
         rbx_binary::to_writer(&mut buffer, &tree, &[lua_instance.id])
             .map_err(mlua::Error::external)?;
 
-        Remodel::upload_asset(context, buffer, asset_id)
+        Remodel::upload_asset(context, buffer, asset_id).await
     }
 
-    fn write_existing_place_asset(
+   async fn write_existing_place_asset(
         context: &Lua,
         lua_instance: LuaInstance,
         asset: UploadPlaceAsset,
@@ -381,15 +410,14 @@ impl Remodel {
             .map_err(mlua::Error::external)?;
 
         match asset {
-            UploadPlaceAsset::Legacy(asset_id) => Remodel::upload_asset(context, buffer, asset_id),
+            UploadPlaceAsset::Legacy(asset_id) => Remodel::upload_asset(context, buffer, asset_id).await,
             UploadPlaceAsset::CloudAPI {
                 place_id,
                 universe_id,
-            } => Remodel::cloud_upload_place_asset(context, buffer, universe_id, place_id),
+            } => Remodel::cloud_upload_place_asset(context, buffer, universe_id, place_id).await,
         }
     }
 
-    #[tokio::main(flavor = "current_thread")]
     async fn cloud_upload_place_asset(
         context: &Lua,
         buffer: Vec<u8>,
@@ -438,7 +466,6 @@ impl Remodel {
         }
     }
 
-    #[tokio::main(flavor = "current_thread")]
     async fn upload_asset(context: &Lua, buffer: Vec<u8>, asset_id: u64) -> mlua::Result<()> {
         let re_context = RemodelContext::get(context)?;
         let auth_cookie = re_context.auth_cookie().ok_or_else(|| {
@@ -497,7 +524,6 @@ impl Remodel {
         }
     }
 
-    #[tokio::main(flavor = "current_thread")]
     async fn check_audio_permissions(
         context: &Lua,
         universe_id: u64,
@@ -623,7 +649,6 @@ impl Remodel {
         Ok(results_table.to_lua(context)?)
     }
 
-    #[tokio::main(flavor = "current_thread")]
     async fn grant_audio_permissions(
         context: &Lua,
         universe_id: u64,
@@ -712,7 +737,6 @@ impl Remodel {
         Ok(results_table.to_lua(context)?)
     }
     
-    #[tokio::main(flavor = "current_thread")]
     async fn get_asset_infos(context: &Lua, asset_ids: Vec<u64>) -> mlua::Result<mlua::Value> {
         let re_context = RemodelContext::get(context)?;
         let auth_cookie = re_context.auth_cookie().ok_or_else(|| {
@@ -811,6 +835,86 @@ impl Remodel {
         Ok(results_table.to_lua(context)?)
     }
 
+    async fn http_request(context: &Lua, options: &LuaHttpRequest) -> mlua::Result<LuaHttpResponse> {
+        let re_context = RemodelContext::get(context)?;
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60 * 3))
+            .build()
+            .map_err(mlua::Error::external)?;
+        
+        let method = options.method.as_ref().map_or_else(|| "GET", |v| &v);
+        let method = Method::try_from(method).map_err(|_| mlua::Error::external(format!("Invalid HTTP method: {}", method)))?;
+        
+        let mut request = client
+            .request(method, &options.url);
+
+        if let Some(true) = options.roblox_auth {
+            let auth_cookie = re_context.auth_cookie().ok_or_else(|| {
+                mlua::Error::external(
+                    "HTTP request attempted with RobloxAuth = true, but you're not signed in to Studio.",
+                )
+            })?;
+
+            request = request.header(COOKIE, format!(".ROBLOSECURITY={}", auth_cookie));
+        }
+
+        if let Some(true) = options.roblox_api_key {
+            let api_key = re_context.api_key().ok_or_else(|| {
+                mlua::Error::external(
+                    "HTTP request attempted with RobloxApiKey = true, but an API key was not provided.",
+                )
+            })?;
+
+            request = request.header("x-api-key", api_key);
+        }   
+
+
+        if let Some(headers) = &options.headers {
+            for (key, value) in headers.iter() {
+                request = request.header(&key[..], &value[..]);
+            }
+        }
+
+        if let Some(body) = &options.body {
+            request = request.body(body.clone());
+        }
+
+        let base_request = request.try_clone().unwrap();
+
+        let mut response = request.send().await.map_err(mlua::Error::external)?;
+
+        if let Some(true) = options.roblox_csrf {
+            if response.status() == StatusCode::FORBIDDEN {
+                if let Some(csrf_token) = response.headers().get("X-CSRF-Token") {
+                    log::debug!("Received CSRF challenge, retrying with token...");
+                    response = base_request
+                        .header("X-CSRF-Token", csrf_token)
+                        .send()
+                        .await
+                        .map_err(mlua::Error::external)?;
+                }
+            }
+        }
+        
+        let status = response.status();
+
+        let mut headers = HashMap::new();
+        for (key, value) in response.headers().iter() {
+            headers.insert(key.as_str().as_bytes().to_vec(), value.as_bytes().to_vec());
+        }
+
+        let body = response.bytes().await.map_err(mlua::Error::external)?;
+
+        Ok(LuaHttpResponse {
+            success: status.is_success(),
+            status_code: status.as_u16(),
+            status_message: status.canonical_reason().unwrap_or_else(|| status.as_str()).to_string(),
+            headers,
+            body: Some(body.to_vec()),
+        })
+    }
+
     fn get_raw_property<'a>(
         context: &'a Lua,
         lua_instance: LuaInstance,
@@ -846,8 +950,8 @@ impl Remodel {
         Ok(())
     }
 
-    fn run_command<'a>(context: &'a Lua, command: &str, args: Vec<&str>) -> mlua::Result<mlua::Value<'a>> {
-        let result = std::process::Command::new(command).args(args).output().map_err(|err| {
+    async fn run_command<'a>(context: &'a Lua, command: &str, args: Vec<&str>) -> mlua::Result<mlua::Value<'a>> {
+        let result = tokio::process::Command::new(command).args(args).output().await.map_err(|err| {
             mlua::Error::external(format!(
                 "Failed to run command: {}",
                 err.to_string()
@@ -865,7 +969,22 @@ impl Remodel {
 }
 
 impl UserData for Remodel {
+    fn add_fields<'lua, F: mlua::UserDataFields<'lua, Self>>(fields: &mut F) {
+        Runtime::userdata_async_fn_many(fields, vec![
+            ("getAssetInfos", "remodel._getAssetInfos"),
+            ("checkAudioPermissions", "remodel._checkAudioPermissions"),
+            ("grantAudioPermissions", "remodel._grantAudioPermissions"),
+            ("httpRequest", "remodel._httpRequest"),
+            ("runCommand", "remodel._runCommand"),
+            ("readModelAsset", "remodel._readModelAsset"),
+            ("readPlaceAsset", "remodel._readPlaceAsset"),
+            ("writeExistingModelAsset", "remodel._writeExistingModelAsset"),
+            ("writeExistingPlaceAsset", "remodel._writeExistingPlaceAsset"),
+            ("publishPlaceToUniverse", "remodel._publishPlaceToUniverse"),
+        ]);
+    }
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+
         methods.add_function(
             "getRawProperty",
             |context, (instance, name): (LuaInstance, String)| {
@@ -883,48 +1002,64 @@ impl UserData for Remodel {
             },
         );
         
-        methods.add_function(
-            "getAssetInfos",
+        methods.add_async_function(
+            "_getAssetInfos",
             |context, asset_ids: Vec<String>| {
-                let asset_ids = asset_ids
-                    .iter()
-                    .map(|id| id.parse().map_err(mlua::Error::external))
-                    .collect::<Result<Vec<_>, _>>()?;
+                async move {
+                    let asset_ids = asset_ids
+                        .iter()
+                        .map(|id| id.parse().map_err(mlua::Error::external))
+                        .collect::<Result<Vec<_>, _>>()?;
 
-                Remodel::get_asset_infos(context, asset_ids)
+                    Remodel::get_asset_infos(context, asset_ids).await
+                }
             },
         );
 
-        methods.add_function(
-            "checkAudioPermissions",
+        methods.add_async_function(
+            "_checkAudioPermissions",
             |context, (universe_id, asset_ids): (String, Vec<String>)| {
-                let universe_id = universe_id.parse().map_err(mlua::Error::external)?;
-                let asset_ids = asset_ids
-                    .iter()
-                    .map(|id| id.parse().map_err(mlua::Error::external))
-                    .collect::<Result<Vec<_>, _>>()?;
+                async move {
+                    let universe_id = universe_id.parse().map_err(mlua::Error::external)?;
+                    let asset_ids = asset_ids
+                        .iter()
+                        .map(|id| id.parse().map_err(mlua::Error::external))
+                        .collect::<Result<Vec<_>, _>>()?;
 
-                Remodel::check_audio_permissions(context, universe_id, asset_ids)
+                    Remodel::check_audio_permissions(context, universe_id, asset_ids).await
+                }
             },
         );
 
-        methods.add_function(
-            "grantAudioPermissions",
+        methods.add_async_function(
+            "_grantAudioPermissions",
             |context, (universe_id, asset_ids): (String, Vec<String>)| {
-                let universe_id = universe_id.parse().map_err(mlua::Error::external)?;
-                let asset_ids = asset_ids
-                    .iter()
-                    .map(|id| id.parse().map_err(mlua::Error::external))
-                    .collect::<Result<Vec<_>, _>>()?;
+                async move {
+                    let universe_id = universe_id.parse().map_err(mlua::Error::external)?;
+                    let asset_ids = asset_ids
+                        .iter()
+                        .map(|id| id.parse().map_err(mlua::Error::external))
+                        .collect::<Result<Vec<_>, _>>()?;
 
-                Remodel::grant_audio_permissions(context, universe_id, asset_ids)
+                    Remodel::grant_audio_permissions(context, universe_id, asset_ids).await
+                }
             },
         );
+        
+        methods.add_async_function("_httpRequest", |context, options: mlua::Value| {
+            async move {
+                context.to_value(
+                    &Remodel::http_request(context, &context.from_value::<LuaHttpRequest>(options)?).await?
+                )
+            }
+        });
 
-        methods.add_function(
-            "runCommand",
+        methods.add_async_function(
+            "_runCommand",
             |context, (command, args): (String, Option<Vec<String>>)| {
-                Remodel::run_command(context, &command, args.unwrap_or_else(|| Vec::new()).iter().map(|s| s.as_str()).collect())
+                async move {
+                    Remodel::run_command(context, &command, args.unwrap_or_else(|| Vec::new()).iter().map(|s| s.as_str()).collect()).await
+                }
             },
         );
 
@@ -954,42 +1089,50 @@ impl UserData for Remodel {
             }
         });
 
-        methods.add_function("readModelAsset", |context, asset_id: String| {
-            let asset_id = asset_id.parse().map_err(mlua::Error::external)?;
-
-            Remodel::read_model_asset(context, asset_id)
-        });
-
-        methods.add_function("readPlaceAsset", |context, asset_id: String| {
-            let asset_id = asset_id.parse().map_err(mlua::Error::external)?;
-
-            Remodel::read_place_asset(context, asset_id)
-        });
-
-        methods.add_function(
-            "writeExistingModelAsset",
-            |context, (instance, asset_id): (LuaInstance, String)| {
+        methods.add_async_function("_readModelAsset", |context, asset_id: String| {
+            async move {
                 let asset_id = asset_id.parse().map_err(mlua::Error::external)?;
 
-                Remodel::write_existing_model_asset(context, instance, asset_id)
+                Remodel::read_model_asset(context, asset_id).await
+            }
+        });
+
+        methods.add_async_function("_readPlaceAsset", |context, asset_id: String| {
+            async move {
+                let asset_id = asset_id.parse().map_err(mlua::Error::external)?;
+
+                Remodel::read_place_asset(context, asset_id).await
+            }
+        });
+
+        methods.add_async_function(
+            "_writeExistingModelAsset",
+            |context, (instance, asset_id): (LuaInstance, String)| {
+                async move {
+                    let asset_id = asset_id.parse().map_err(mlua::Error::external)?;
+
+                    Remodel::write_existing_model_asset(context, instance, asset_id).await
+                }
             },
         );
 
-        methods.add_function(
-            "writeExistingPlaceAsset",
+        methods.add_async_function(
+            "_writeExistingPlaceAsset",
             |context, (instance, asset_id): (LuaInstance, String)| {
-                let asset_id = asset_id.parse().map_err(mlua::Error::external)?;
+                async move {
+                    let asset_id = asset_id.parse().map_err(mlua::Error::external)?;
 
-                Remodel::write_existing_place_asset(
-                    context,
-                    instance,
-                    UploadPlaceAsset::Legacy(asset_id),
-                )
+                    Remodel::write_existing_place_asset(
+                        context,
+                        instance,
+                        UploadPlaceAsset::Legacy(asset_id),
+                    ).await
+                }
             },
         );
 
-        methods.add_function(
-            "publishPlaceToUniverse",
+        methods.add_async_function(
+            "_publishPlaceToUniverse",
             |context, (instance, universe_id, place_id): (LuaInstance, u64, u64)| {
                 Remodel::write_existing_place_asset(
                     context,

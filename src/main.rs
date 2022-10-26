@@ -1,3 +1,4 @@
+mod lua_runtime;
 mod remodel_api;
 mod remodel_context;
 mod roblox_api;
@@ -13,7 +14,8 @@ use std::{
 };
 
 use backtrace::Backtrace;
-use mlua::{Lua, MultiValue, ToLua};
+use lua_runtime::Runtime;
+use mlua::{Lua, ToLua};
 use structopt::StructOpt;
 
 use crate::{remodel_api::RemodelApi, remodel_context::RemodelContext, roblox_api::RobloxApi};
@@ -68,30 +70,36 @@ enum Subcommand {
     },
 }
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), anyhow::Error> {
     let options = Options::from_args();
     initialize_logger(options.verbosity);
     install_panic_hook();
 
-    if let Err(err) = run(options) {
+    if let Err(err) = run(options).await {
         log::error!("{:?}", err);
-        process::exit(1);
     }
+
+    Ok(())
 }
 
-fn run(options: Options) -> Result<(), anyhow::Error> {
+async fn run(options: Options) -> Result<(), anyhow::Error> {
     let api_key = options.api_key;
     let auth_cookie = options.auth_cookie.or_else(rbx_cookie::get_value);
 
     match options.subcommand {
         Subcommand::Run { script, args } => {
             let (contents, chunk_name) = load_script(&script)?;
+
             let lua = Lua::new();
+            lua.sandbox(true)?;
 
             let lua_args = args
                 .into_iter()
                 .map(|value| value.to_lua(&lua))
                 .collect::<Result<Vec<_>, _>>()?;
+
+            Runtime::inject_runtime(&lua)?;
 
             RemodelContext::new(auth_cookie, api_key).inject(&lua)?;
 
@@ -99,7 +107,9 @@ fn run(options: Options) -> Result<(), anyhow::Error> {
             RobloxApi::inject(&lua)?;
 
             let chunk = lua.load(&contents).set_name(&chunk_name)?;
-            chunk.call(MultiValue::from_vec(lua_args))?;
+
+            Runtime::spawn_lua(&lua, chunk.into_function()?, lua_args)?;
+            Runtime::start(&lua).await?;
 
             Ok(())
         }

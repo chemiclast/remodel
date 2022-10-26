@@ -32,6 +32,7 @@ base64 = "0.13.0"
 log = "0.4.14"
 rbx_cookie = "0.1.2"
 serde = "1.0.130"
+serde_with = "2.0.1"
 serde_json = "1.0.68"
 structopt = "0.3.23"
 
@@ -39,7 +40,7 @@ futures = "0.3.24"
 
 [dependencies.tokio]
 version = "1.21.2"
-features = ["macros"]
+features = ["macros", "process"]
 
 [dependencies.reqwest]
 version = "0.11.12"
@@ -47,7 +48,7 @@ features = ["json"]
 
 [dependencies.mlua]
 version = "0.8.4"
-features = ["luau", "vendored"]
+features = ["luau", "vendored", "async", "serialize"]
 
 [dependencies.env_logger]
 version = "0.9.1"
