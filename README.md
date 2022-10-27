@@ -32,9 +32,6 @@ Notes on version tags:
 <img src="builderman.png" alt="Remodel Logo" width="327" height="277" align="right" />
 <h1 align="left">Remodel</h1>
 
-[![Remodel on crates.io](https://img.shields.io/crates/v/remodel.svg?label=crates.io)](https://crates.io/crates/remodel)
-[![Actions Status](https://github.com/rojo-rbx/remodel/workflows/CI/badge.svg)](https://github.com/rojo-rbx/remodel/actions)
-
 Remodel is a command line tool for manipulating Roblox files and the instances contained within them. It's a scriptable tool designed to enable workflows where no other tool will do.
 
 Remodel can be used to do almost anything with Roblox files. Some uses include:
@@ -48,26 +45,23 @@ Remodel is still in early development, but much of its API is already stable. Fe
 
 ## Installation
 
-### With [Foreman](https://github.com/Roblox/foreman)
-Remodel can be installed with Foreman, a toolchain manager for Roblox projects:
+The following instructions are for installing the Uplift fork of remodel. If
+you're looking to install standard Remodel, see [Remodel's Installation
+section](https://github.com/rojo-rbx/remodel#installation).
+
+### With [Aftman](https://github.com/LPGhatguy/aftman)
+Remodel can be installed with Aftman, a toolchain manager for Roblox projects:
 
 ```toml
 [tools]
-remodel = { source = "rojo-rbx/remodel", version = "0.10.0" }
+remodel = "UpliftGames/remodel@0.12.0-uplift.release.6"
 ```
 
 ### From GitHub Releases
-You can download pre-built binaries from [Remodel's GitHub Releases page](https://github.com/rojo-rbx/remodel/releases).
-
-### From crates.io
-You'll need Rust 1.56.0 or newer.
-
-```bash
-cargo install remodel
-```
+You can download pre-built binaries from [the GitHub Releases page](https://github.com/UpliftGames/remodel/releases).
 
 ## Quick Start
-Most of Remodel's interface is its Lua API. Users write Lua 5.3 scripts that Remodel runs, providing them with a special set of APIs.
+Most of Remodel's interface is its Lua API. Users write Luau scripts that Remodel runs, providing them with a special set of APIs.
 
 One use for Remodel is to break a place file apart into multiple model files. Imagine we have a place file named `my-place.rbxlx` that has some models stored in `ReplicatedStorage.Models`.
 
