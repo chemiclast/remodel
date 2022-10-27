@@ -27,7 +27,10 @@ impl Runtime {
             .get::<_, mlua::Table>("_runtime")?
             .get::<_, mlua::Function>("spawn_lua")?;
 
-        spawn_lua.call::<_, ()>((mlua::Value::Function(func), args))?;
+        let mut args = args.to_lua_multi(lua)?.clone();
+        args.push_front(mlua::Value::Function(func));
+
+        spawn_lua.call::<_, ()>(args)?;
 
         Ok(())
     }

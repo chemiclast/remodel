@@ -15,7 +15,7 @@ use std::{
 
 use backtrace::Backtrace;
 use lua_runtime::Runtime;
-use mlua::{Lua, ToLua};
+use mlua::{Lua, MultiValue, ToLua};
 use structopt::StructOpt;
 
 use crate::{remodel_api::RemodelApi, remodel_context::RemodelContext, roblox_api::RobloxApi};
@@ -70,7 +70,7 @@ enum Subcommand {
     },
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let options = Options::from_args();
     initialize_logger(options.verbosity);
@@ -97,7 +97,7 @@ async fn run(options: Options) -> Result<(), anyhow::Error> {
             let lua_args = args
                 .into_iter()
                 .map(|value| value.to_lua(&lua))
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect::<Result<MultiValue, _>>()?;
 
             Runtime::inject_runtime(&lua)?;
 
