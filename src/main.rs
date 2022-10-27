@@ -56,7 +56,7 @@ struct Options {
 
 #[derive(Debug, StructOpt)]
 enum Subcommand {
-    /// Run a Lua 5.3 script by path or defined in a .remodel directory.
+    /// Run a Luau script by path or defined in a .remodel directory.
     ///
     /// Additional arguments are passed to the script being run.
     Run {

@@ -105,6 +105,25 @@ Remodel supports some parts of Roblox's API in order to make code familiar to ex
 	* The second argument (recursive) is not supported by Remodel.
 * `<DataModel>:GetService(name)` (0.6.0+)
 
+## Task API
+Remodel supports some parts of Roblox's Task API.
+
+* `task.spawn(function | thread, ...): thread`
+* `task.defer(function | thread, ...): thread`
+* `task.delay(duration: number, function | thread, ...): thread`
+* `task.wait(duration: number): number`
+
+Remodel will run until all tasks that it's aware of are complete.\
+Remodel's coroutine handling looks a lot like Roblox's: async operations yield
+the current coroutine until they complete. You can resume or close the coroutine
+early. With some minor modifications, libraries like [Promise](https://eryn.io/roblox-lua-promise/) work in remodel.
+
+### Unstable Task API
+
+If remodel is running longer than expected, you likely have a coroutine running
+in the background. You can list all running tasks to the output with
+`_runtime.debug.list_lua_tasks()`
+
 ## Remodel API
 Remodel has its own API that goes beyond what can be done inside Roblox.
 
@@ -316,36 +335,42 @@ remodel.runCommand(command: string, args: { string }?): { stdout: string, stderr
 
 Runs a command and returns the result.
 
-### `remodel.checkAudioPermissions` (0.12.0+)
+### `remodel.httpRequest` (0.12.0+)
 ```
-remodel.checkAudioPermissions(universeId: string, assetIds: { string }): { results: { [string]: boolean }, errors: { [string]: string } }
+type HttpRequestOptions = {
+	Url: string,
+	Method: string?,
+	Headers: { [string]: string }?,
+	Body: string?,
+
+	RobloxAuth: boolean?,
+	RobloxApiKey: boolean?,
+	RobloxCsrf: boolean?,
+}
+
+type HttpRequestResponse = {
+	Success: boolean,
+	StatusCode: number,
+	StatusMessage: string,
+	Headers: { [string]: string },
+	Body: string,
+}
+
+remodel.httpRequest(options: HttpRequestOptions): HttpRequestResponse
 ```
 
-Checks if `universeId` has permission to use the audio assets in `assetIds`.
+Sends an http request and returns the result.
 
-`results` contains true/false results for each asset id. For any asset that
-checking permissions errored for, `errors` will contain the error message.
+Throws if your request is malformed or if there was an issue _sending_ the
+request. If the request succeeded, but the server did not like it, the response
+is still returned without throwing.
 
-### `remodel.grantAudioPermissions` (0.12.0+)
-```
-remodel.grantAudioPermissions(universeId: string, assetIds: { string }): { results: { [string]: boolean }, errors: { [string]: string } }
-```
-
-Grants `universeId` permission to use the audio assets in `assetIds`.
-
-`results` contains true for each successful asset id. For any asset that
-granting permissions errored for, `errors` will contain the error message.
-
-### `remodel.getAssetInfos` (0.12.0+)
-```
-remodel.getAssetInfos(assetIds: { string }): { results: { [string]: { asset: { ... }, creator: { ... }, voting: { ... } } }, errors: { [string]: string } }
-```
-
-Gets information about the given asset ids.
-
-Returns the result of `https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=...`
-
-Ids that are not valid asset ids will be missing from both the `results` map and `errors` map.
+Options notes:
+* `Method` should be upper-case, and defaults to `GET`
+* `RobloxAuth` will add a `Cookie` header with the current Roblox auth cookie
+* `RobloxApiKey` will add a `x-api-key` header with the open cloud API key
+* `RobloxCsrf` will automatically retry with the `x-csrf-token` header if given
+  a csrf challenge.
 
 ## JSON API
 

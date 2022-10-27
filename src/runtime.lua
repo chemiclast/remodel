@@ -21,7 +21,7 @@ local function execute_rust_async(task, callback, ...)
 	end, task, callback, ...)
 
 	rust_async_tasks[task] = nil
-	if not task.moved_on then
+	if not task.moved_on and coroutine.status(task.owner_thread) == "suspended" then
 		coroutine.resume(task.owner_thread)
 	end
 end

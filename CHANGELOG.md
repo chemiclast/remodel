@@ -2,6 +2,20 @@
 
 ## Unreleased Changes
 
+## 0.12.0-uplift.release.6 (2022-10-27) (prerelease)
+* **Breaking:** Made runtime async in a Roblox-like way.\
+  Yielding operations now yield the current coroutine, then resume it when the
+  operation is complete.\
+  Internally, the "main" coroutine handles task scheduling and resuming.\
+  Remodel will run until all coroutines it's aware of are complete.
+* **Breaking:** Made most `remodel.*` functions async.\
+  It is now possible to run multiple heavy remodel operations in parallel.
+* Added `task` library basics.
+* Added `remodel.httpRequest`, which takes [RequestAsync](https://create.roblox.com/docs/reference/engine/classes/HttpService#RequestAsync)-like request
+  options and returns RequestAsync-like response data. Remodel handles Roblox
+  cookies, API keys, and CSRF for you (if you tell it to, see the readme).
+* Removed built-in methods for audio permissions and asset info requests. Error handling, retries, and concurrency can be better handled for these through the `remodel.httpRequest` API.
+
 ## 0.12.0-uplift.release.5 (2022-10-14) (prerelease)
 * Added `remodel.runCommand` since Luau does not have access to the `os` or `io`
   libraries need to run commands.
