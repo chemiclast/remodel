@@ -635,7 +635,9 @@ impl Remodel {
         })?;
 
         match instance.properties.get(name) {
-            Some(value) => rbxvalue_to_lua(context, value),
+            Some(value) => {
+                rbxvalue_to_lua(context, value, Some((&tree, lua_instance.tree.clone())))
+            }
             None => Ok(mlua::Value::Nil),
         }
     }

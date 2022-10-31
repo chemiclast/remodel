@@ -1,11 +1,14 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     iter::FromIterator,
     sync::{Arc, Mutex},
 };
 
 use mlua::{FromLua, Lua, MetaMethod, ToLua, UserData, UserDataMethods};
-use rbx_dom_weak::{types::Ref, InstanceBuilder, WeakDom};
+use rbx_dom_weak::{
+    types::{Ref, Variant},
+    InstanceBuilder, WeakDom,
+};
 use rbx_reflection::ClassTag;
 
 #[derive(Clone)]
@@ -44,8 +47,12 @@ impl LuaInstance {
             ));
         }
 
+        let mut ref_remap = HashMap::new();
+
         let root_id = tree.root_ref();
-        let new_id = Self::clone_kernel(&mut tree, self.id, root_id);
+        let new_id = Self::clone_kernel(&mut tree, self.id, root_id, &mut ref_remap);
+
+        Self::clone_fix_refs(&mut tree, new_id, &ref_remap);
 
         Ok(LuaInstance {
             tree: Arc::clone(&self.tree),
@@ -53,7 +60,32 @@ impl LuaInstance {
         })
     }
 
-    fn clone_kernel(tree: &mut WeakDom, id: Ref, parent_id: Ref) -> Ref {
+    fn clone_fix_refs(tree: &mut WeakDom, ancestor_id: Ref, ref_remap: &HashMap<Ref, Ref>) -> () {
+        let mut next = vec![ancestor_id];
+        while !next.is_empty() {
+            let id = next.pop().unwrap();
+            let instance = tree.get_by_ref_mut(id).unwrap();
+
+            for (_name, value) in instance.properties.iter_mut() {
+                if let Variant::Ref(old_ref) = value {
+                    if let Some(new_ref) = ref_remap.get(old_ref) {
+                        *value = Variant::Ref(*new_ref);
+                    }
+                }
+            }
+
+            for child_id in instance.children() {
+                next.push(*child_id);
+            }
+        }
+    }
+
+    fn clone_kernel(
+        tree: &mut WeakDom,
+        id: Ref,
+        parent_id: Ref,
+        ref_remap: &mut HashMap<Ref, Ref>,
+    ) -> Ref {
         let instance = tree.get_by_ref(id).unwrap();
         let builder = InstanceBuilder::new(&instance.class)
             .with_name(&instance.name)
@@ -67,8 +99,10 @@ impl LuaInstance {
 
         let new_id = tree.insert(parent_id, builder);
 
+        ref_remap.insert(id, new_id);
+
         for child_id in children {
-            Self::clone_kernel(tree, child_id, new_id);
+            Self::clone_kernel(tree, child_id, new_id, ref_remap);
         }
 
         new_id
