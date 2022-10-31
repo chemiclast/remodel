@@ -413,7 +413,7 @@ impl Remodel {
             }
 
             let mut buffer = Vec::new();
-            rbx_binary::to_writer(&mut buffer, &tree, &[lua_instance.id])
+            rbx_binary::to_writer(&mut buffer, &tree, instance.children())
                 .map_err(mlua::Error::external)?;
 
             Ok(buffer)

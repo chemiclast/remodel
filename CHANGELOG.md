@@ -2,7 +2,12 @@
 
 ## Unreleased Changes
 
-## 0.12.0-uplift.release.6 (2022-10-27) (prerelease)
+## 0.12.0-uplift.release.7 (2022-10-27)
+* Fixed writeExistingPlaceAsset to serialize datamodel properly. (Datamodel
+  itself does not get serialized; datamodel children are all serialized at the top level. Oops!)
+* Update dependencies
+
+## 0.12.0-uplift.release.6 (2022-10-27)
 * **Breaking:** Made runtime async in a Roblox-like way.\
   Yielding operations now yield the current coroutine, then resume it when the
   operation is complete.\
@@ -16,11 +21,11 @@
   cookies, API keys, and CSRF for you (if you tell it to, see the readme).
 * Removed built-in methods for audio permissions and asset info requests. Error handling, retries, and concurrency can be better handled for these through the `remodel.httpRequest` API.
 
-## 0.12.0-uplift.release.5 (2022-10-14) (prerelease)
+## 0.12.0-uplift.release.5 (2022-10-14)
 * Added `remodel.runCommand` since Luau does not have access to the `os` or `io`
   libraries need to run commands.
 
-## 0.12.0-uplift.release.4 (2022-10-11) (prerelease)
+## 0.12.0-uplift.release.4 (2022-10-11)
 * **Breaking:** Luau is used instead of Lua 5.3
 * Added `remodel.checkAudioPermissions(universeId, assetIds)` and `remodel.grantAudioPermissions(universeId, assetIds)`
 * Added `remodel.getAssetInfos(assetIds)`
