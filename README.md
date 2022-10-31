@@ -54,7 +54,7 @@ Remodel can be installed with Aftman, a toolchain manager for Roblox projects:
 
 ```toml
 [tools]
-remodel = "UpliftGames/remodel@0.12.0-uplift.release.6"
+remodel = "UpliftGames/remodel@0.12.0-uplift.release.7"
 ```
 
 ### From GitHub Releases
