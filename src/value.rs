@@ -6,10 +6,18 @@ use mlua::{
 use rbx_dom_weak::types::{
     CFrame, Color3, Color3uint8, Variant, VariantType, Vector3, Vector3int16,
 };
+use rbx_dom_weak::WeakDom;
 use std::fmt;
 use std::ops;
+use std::sync::{Arc, Mutex, MutexGuard};
 
-pub fn rbxvalue_to_lua<'lua>(context: &'lua Lua, value: &Variant) -> LuaResult<LuaValue<'lua>> {
+use crate::roblox_api::LuaInstance;
+
+pub fn rbxvalue_to_lua<'lua>(
+    context: &'lua Lua,
+    value: &Variant,
+    tree: Option<(&MutexGuard<WeakDom>, Arc<Mutex<WeakDom>>)>,
+) -> LuaResult<LuaValue<'lua>> {
     fn unimplemented_type(name: &str) -> LuaResult<LuaValue<'_>> {
         Err(mlua::Error::external(format!(
             "Values of type {} are not yet implemented.",
@@ -38,7 +46,13 @@ pub fn rbxvalue_to_lua<'lua>(context: &'lua Lua, value: &Variant) -> LuaResult<L
         Variant::PhysicalProperties(_) => unimplemented_type("PhysicalProperties"),
         Variant::Ray(_) => unimplemented_type("Ray"),
         Variant::Rect(_) => unimplemented_type("Rect"),
-        Variant::Ref(_) => unimplemented_type("Ref"),
+        Variant::Ref(value) => match tree {
+            Some((tree_rw, tree_ref)) => match tree_rw.get_by_ref(*value) {
+                Some(_) => Ok(LuaInstance::new(tree_ref, *value).to_lua(context)?),
+                None => Ok(LuaValue::Nil),
+            },
+            None => Err(mlua::Error::external("Cannot convert Ref without a tree")),
+        },
         Variant::SharedString(_) => unimplemented_type("SharedString"),
         Variant::String(value) => value.as_str().to_lua(context),
         Variant::UDim(_) => unimplemented_type("UDim"),
