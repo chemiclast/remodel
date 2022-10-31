@@ -2,6 +2,18 @@
 
 ## Unreleased Changes
 
+## 0.12.0-uplift.release.8 (2022-10-27)
+* Fixed ref cloning to match Roblox behavior.
+
+  When an object is cloned, any properties referencing another object will:
+  * refer to a cloned object if the referenced object is a descendant of the root cloned object
+  * refer to the original object if the referenced object is not a descendant of the root cloned object
+
+  Previously, refs would _always_ refer to the original object, which means
+  operations like `remodel.writePlaceFile("clone.rbxl", game:Clone())` would
+  result in every object reference property being `nil`.
+* Implemented ref-to-lua conversion so `getRawProperty` can read object reference properties.
+
 ## 0.12.0-uplift.release.7 (2022-10-27)
 * Fixed writeExistingPlaceAsset to serialize datamodel properly. (Datamodel
   itself does not get serialized; datamodel children are all serialized at the top level. Oops!)
