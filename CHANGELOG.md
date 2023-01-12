@@ -2,6 +2,9 @@
 
 ## Unreleased Changes
 
+## 0.12.0-uplift.release.9 (2023-01-12)
+* Added `Font` support
+
 ## 0.12.0-uplift.release.8 (2022-10-27)
 * Fixed ref cloning to match Roblox behavior.
 
