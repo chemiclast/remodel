@@ -103,8 +103,9 @@ jobs:
 
       - name: Upload Archive to Release
         run: |
+          URL=${{ needs.create-release.outputs.upload_url }}
           cp release.zip ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
-          gh release upload ${{ needs.create-release.outputs.upload_url }} ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
+          gh release upload ${URL:0:-13} ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
