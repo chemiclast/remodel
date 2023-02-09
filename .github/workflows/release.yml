@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: write
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      upload_id: ${{ steps.create_release.outputs.id }}
     steps:
       - name: Create Release
         id: create_release
@@ -103,9 +103,8 @@ jobs:
 
       - name: Upload Archive to Release
         run: |
-          URL=${{ needs.create-release.outputs.upload_url }}
           cp release.zip ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
-          gh release upload ${URL:0:-13} ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
+          gh release upload https://uploads.github.com/repos/chemiclast/remodel/releases/${{ needs.create-release.outputs.upload_id }}/assets ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
