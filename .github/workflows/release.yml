@@ -101,15 +101,15 @@ jobs:
             zip ../release.zip *
           fi
 
+      - name: Upload Archive to Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
+          path: release.zip
+
       - name: Upload Archive to Release
         run: |
           cp release.zip ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
           gh release upload https://uploads.github.com/repos/chemiclast/remodel/releases/${{ needs.create-release.outputs.upload_id }}/assets ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Archive to Artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.BIN }}-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
-          path: release.zip
